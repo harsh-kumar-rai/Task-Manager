@@ -7,7 +7,16 @@ const { connectDB } = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 const { seedDemoData } = require('./seed');
 
+// Load env vars: prefer the Vercel sandbox project env file when present, then fall back to local .env
+dotenv.config({ path: '/vercel/share/.env.project' });
 dotenv.config({ path: path.join(__dirname, '.env') });
+
+if (!process.env.JWT_SECRET) {
+  // Provide a dev-only fallback so sign-in does not crash if the env is misconfigured.
+  // Production deployments must set JWT_SECRET explicitly.
+  process.env.JWT_SECRET = 'dev-only-insecure-jwt-secret-change-me';
+  console.warn('[backend] JWT_SECRET not set; using dev fallback. Set JWT_SECRET in env for security.');
+}
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
