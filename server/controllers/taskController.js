@@ -1,15 +1,42 @@
-const Task = require('../models/Task');
+const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
+const Task = require('../models/Task');
+const Project = require('../models/Project');
 
-exports.getTasks = async (req, res, next) => {
+const populateTask = (q) =>
+  q
+    .populate('assignedTo', 'name email')
+    .populate('createdBy', 'name email')
+    .populate('labels', 'name color')
+    .populate('project', 'name');
+
+const sendValidation = (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ success: false, errors: errors.array() });
+    return true;
+  }
+  return false;
+};
+
+const canModify = (task, userId, projectRole) => {
+  if (projectRole === 'admin') return true;
+  if (task.createdBy?._id?.toString() === userId.toString()) return true;
+  if (task.assignedTo?._id?.toString() === userId.toString()) return true;
+  return false;
+};
+
+exports.listProjectTasks = async (req, res, next) => {
   try {
-    const { status, priority, category, search, sortBy, order, page, limit } = req.query;
-
-    const query = { user: req.user._id };
+    const { status, priority, assignedTo, search } = req.query;
+    const query = { project: req.project._id };
 
     if (status) query.status = status;
     if (priority) query.priority = priority;
-    if (category) query.category = category;
+    if (assignedTo === 'me') query.assignedTo = req.user._id;
+    else if (assignedTo === 'unassigned') query.assignedTo = null;
+    else if (assignedTo) query.assignedTo = assignedTo;
+
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -17,46 +44,8 @@ exports.getTasks = async (req, res, next) => {
       ];
     }
 
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 20;
-    const skip = (pageNum - 1) * pageSize;
-
-    const sortField = sortBy || 'createdAt';
-    const sortOrder = order === 'asc' ? 1 : -1;
-
-    const [tasks, total] = await Promise.all([
-      Task.find(query)
-        .populate('category', 'name color icon')
-        .sort({ [sortField]: sortOrder })
-        .skip(skip)
-        .limit(pageSize),
-      Task.countDocuments(query),
-    ]);
-
-    res.json({
-      success: true,
-      tasks,
-      pagination: {
-        page: pageNum,
-        limit: pageSize,
-        total,
-        pages: Math.ceil(total / pageSize),
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-exports.getTask = async (req, res, next) => {
-  try {
-    const task = await Task.findOne({ _id: req.params.id, user: req.user._id }).populate('category', 'name color icon');
-
-    if (!task) {
-      return res.status(404).json({ success: false, message: 'Task not found' });
-    }
-
-    res.json({ success: true, task });
+    const tasks = await populateTask(Task.find(query).sort('-createdAt'));
+    res.json({ success: true, tasks });
   } catch (err) {
     next(err);
   }
@@ -64,33 +53,42 @@ exports.getTask = async (req, res, next) => {
 
 exports.createTask = async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+    if (sendValidation(req, res)) return;
+
+    const { title, description, status, priority, dueDate, assignedTo, labels } = req.body;
+
+    if (assignedTo && !req.project.isMember(assignedTo)) {
+      return res.status(400).json({ success: false, message: 'Assignee must be a project member' });
     }
 
-    req.body.user = req.user._id;
-    const task = await Task.create(req.body);
-    const populated = await task.populate('category', 'name color icon');
+    const task = await Task.create({
+      title,
+      description,
+      status,
+      priority,
+      dueDate: dueDate || null,
+      assignedTo: assignedTo || null,
+      labels: labels || [],
+      project: req.project._id,
+      createdBy: req.user._id,
+    });
 
+    const populated = await populateTask(Task.findById(task._id));
     res.status(201).json({ success: true, task: populated });
   } catch (err) {
     next(err);
   }
 };
 
-exports.updateTask = async (req, res, next) => {
+exports.getTask = async (req, res, next) => {
   try {
-    let task = await Task.findOne({ _id: req.params.id, user: req.user._id });
+    const task = await populateTask(Task.findById(req.params.id));
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
 
-    if (!task) {
-      return res.status(404).json({ success: false, message: 'Task not found' });
+    const project = await Project.findById(task.project._id);
+    if (!project || !project.isMember(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
     }
-
-    task = await Task.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    }).populate('category', 'name color icon');
 
     res.json({ success: true, task });
   } catch (err) {
@@ -98,12 +96,57 @@ exports.updateTask = async (req, res, next) => {
   }
 };
 
+exports.updateTask = async (req, res, next) => {
+  try {
+    const task = await populateTask(Task.findById(req.params.id));
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
+
+    const project = await Project.findById(task.project._id);
+    if (!project || !project.isMember(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const role = project.getMember(req.user._id).role;
+    if (!canModify(task, req.user._id, role)) {
+      return res.status(403).json({ success: false, message: 'You cannot modify this task' });
+    }
+
+    const { title, description, status, priority, dueDate, assignedTo, labels } = req.body;
+
+    if (assignedTo !== undefined && assignedTo !== null && !project.isMember(assignedTo)) {
+      return res.status(400).json({ success: false, message: 'Assignee must be a project member' });
+    }
+
+    if (title !== undefined) task.title = title;
+    if (description !== undefined) task.description = description;
+    if (status !== undefined) task.status = status;
+    if (priority !== undefined) task.priority = priority;
+    if (dueDate !== undefined) task.dueDate = dueDate || null;
+    if (assignedTo !== undefined) task.assignedTo = assignedTo || null;
+    if (labels !== undefined) task.labels = labels;
+
+    await task.save();
+    const populated = await populateTask(Task.findById(task._id));
+    res.json({ success: true, task: populated });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.deleteTask = async (req, res, next) => {
   try {
-    const task = await Task.findOne({ _id: req.params.id, user: req.user._id });
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
 
-    if (!task) {
-      return res.status(404).json({ success: false, message: 'Task not found' });
+    const project = await Project.findById(task.project);
+    if (!project || !project.isMember(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const isAdmin = project.isAdmin(req.user._id);
+    const isCreator = task.createdBy.toString() === req.user._id.toString();
+    if (!isAdmin && !isCreator) {
+      return res.status(403).json({ success: false, message: 'Only admins or the creator can delete this task' });
     }
 
     await task.deleteOne();
@@ -113,44 +156,14 @@ exports.deleteTask = async (req, res, next) => {
   }
 };
 
-exports.getStats = async (req, res, next) => {
+exports.getMyTasks = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const { status } = req.query;
+    const query = { assignedTo: req.user._id };
+    if (status) query.status = status;
 
-    const [statusCounts, priorityCounts, totalTasks, overdueTasks] = await Promise.all([
-      Task.aggregate([
-        { $match: { user: userId } },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
-      Task.aggregate([
-        { $match: { user: userId } },
-        { $group: { _id: '$priority', count: { $sum: 1 } } },
-      ]),
-      Task.countDocuments({ user: userId }),
-      Task.countDocuments({
-        user: userId,
-        status: { $ne: 'completed' },
-        dueDate: { $lt: new Date(), $ne: null },
-      }),
-    ]);
-
-    const statusMap = {};
-    statusCounts.forEach((s) => (statusMap[s._id] = s.count));
-
-    const priorityMap = {};
-    priorityCounts.forEach((p) => (priorityMap[p._id] = p.count));
-
-    res.json({
-      success: true,
-      stats: {
-        total: totalTasks,
-        todo: statusMap['todo'] || 0,
-        inProgress: statusMap['in-progress'] || 0,
-        completed: statusMap['completed'] || 0,
-        overdue: overdueTasks,
-        byPriority: priorityMap,
-      },
-    });
+    const tasks = await populateTask(Task.find(query).sort('dueDate createdAt'));
+    res.json({ success: true, tasks });
   } catch (err) {
     next(err);
   }

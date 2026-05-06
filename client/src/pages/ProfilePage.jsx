@@ -1,58 +1,73 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { useTasks } from '../context/TaskContext';
+import { useProjects } from '../context/ProjectsContext';
+import { initialsFor, avatarColorClass } from '../lib/format';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
-  const { stats, fetchStats } = useTasks();
+  const { projects } = useProjects();
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    (async () => {
+      try {
+        const { data } = await api.get('/dashboard');
+        setStats(data.dashboard.stats);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+  }, []);
 
-  const initials = user?.name?.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
-
-  const memberSince = user?.createdAt
-    ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const completed = stats?.completed || 0;
+  const total = stats?.totalAssigned || 0;
+  const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Profile</h1>
-      </div>
+    <div className="fade-in">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">Account</p>
+          <h1>Profile</h1>
+        </div>
+      </header>
 
       <div className="profile-card">
-        <div className="profile-avatar-lg">{initials}</div>
-        <div className="profile-name">{user?.name}</div>
-        <div className="profile-email">{user?.email}</div>
-
-        <div className="profile-stat">
-          <span className="label">Total Tasks</span>
-          <span className="val">{stats?.total || 0}</span>
-        </div>
-        <div className="profile-stat">
-          <span className="label">Completed</span>
-          <span className="val">{stats?.completed || 0}</span>
-        </div>
-        <div className="profile-stat">
-          <span className="label">In Progress</span>
-          <span className="val">{stats?.inProgress || 0}</span>
-        </div>
-        <div className="profile-stat">
-          <span className="label">Completion Rate</span>
-          <span className="val">
-            {stats && stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
+        <div className="profile-head">
+          <span className={`avatar avatar-lg ${avatarColorClass(user?.email)}`}>
+            {initialsFor(user?.name)}
           </span>
-        </div>
-        <div className="profile-stat">
-          <span className="label">Member Since</span>
-          <span className="val">{memberSince}</span>
+          <div>
+            <div className="name">{user?.name}</div>
+            <div className="email">{user?.email}</div>
+          </div>
         </div>
 
-        <button className="btn btn-danger" style={{ width: '100%', marginTop: '24px' }} onClick={logout}>
-          Sign Out
-        </button>
+        <div className="profile-stats">
+          <div className="profile-stat-cell">
+            <div className="label">Tasks assigned</div>
+            <div className="value">{total}</div>
+          </div>
+          <div className="profile-stat-cell">
+            <div className="label">Completed</div>
+            <div className="value">{completed}</div>
+          </div>
+          <div className="profile-stat-cell">
+            <div className="label">Completion rate</div>
+            <div className="value">{rate}%</div>
+          </div>
+          <div className="profile-stat-cell">
+            <div className="label">Projects</div>
+            <div className="value">{projects.length}</div>
+          </div>
+        </div>
+
+        <div className="profile-actions">
+          <button className="btn btn-secondary btn-block" onClick={logout}>
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );

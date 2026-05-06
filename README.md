@@ -1,167 +1,225 @@
-<div align="center">
+# Stack — Team Task Manager
 
-# ✅ TaskFlow — Personal Task Manager
+A full-stack team task manager where users create projects, assign tasks to teammates, and track progress with role-based access (Admin / Member).
 
-A full-stack productivity application for managing tasks with an intuitive dashboard, smart filtering, and real-time analytics.
-
-**Built with React · Node.js · Express.js · MongoDB**
-
-![Dashboard](screenshots/dashboard.png)
-
-</div>
+**Stack:** React · Vite · Node.js · Express · MongoDB · JWT
 
 ---
 
-## ✨ Features
+## Features
 
-- **Secure Authentication** — JWT-based registration and login with bcrypt password hashing
-- **Task CRUD** — Create, update, delete, and toggle task completion with rich metadata
-- **Smart Filtering** — Filter tasks by status, priority, category, or search by keywords
-- **Custom Categories** — Organize tasks under color-coded categories
-- **Dashboard Analytics** — Visual stats cards, SVG progress ring, and recent activity feed
-- **Responsive UI** — Fully responsive dark-themed interface that works on desktop and mobile
-
-![Create Task Modal](screenshots/create-task.png)
-
----
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 18, React Router v7, Axios, Context API, Vite |
-| **Backend** | Node.js, Express.js, Mongoose, JWT, bcryptjs |
-| **Database** | MongoDB (in-memory via `mongodb-memory-server`) |
-| **Styling** | Vanilla CSS with custom design system (glassmorphism, dark theme) |
+- **Authentication** — JWT signup / login with bcrypt-hashed passwords
+- **Projects & teams** — Create projects, invite members by email, manage roles
+- **Role-based access** — Admins can edit projects, manage members, and create labels; members can create and update their own tasks
+- **Tasks** — Create, assign, set priority, due date, and labels; track via Kanban-style board (To do / In progress / Completed)
+- **Dashboard** — Personal overview of upcoming, overdue, and completed tasks across every project
+- **Labels** — Per-project color-coded labels for quick categorization
+- **Validation & error handling** — Server-side validation with `express-validator`, structured error responses
+- **Responsive UI** — Clean, light-themed interface inspired by Linear / Notion
 
 ---
 
-## 📁 Project Structure
+## Tech stack
+
+| Layer       | Technology                                                       |
+| ----------- | ---------------------------------------------------------------- |
+| Frontend    | React 18, React Router v7, Vite, Axios, Context API, react-hot-toast |
+| Backend     | Node.js, Express, Mongoose, JSON Web Tokens, bcryptjs, express-validator |
+| Database    | MongoDB (Atlas in production, in-memory for local dev)           |
+| Deployment  | Railway (single service serving API + built client)              |
+
+---
+
+## Getting started locally
+
+### 1. Prerequisites
+
+- Node.js 18+ and npm
+- Optional: MongoDB Atlas connection string (works without one — falls back to an in-memory DB for development)
+
+### 2. Install dependencies
+
+From the project root:
+
+```bash
+npm run install:all
+```
+
+This installs root dev tooling, the server, and the client.
+
+### 3. Configure environment variables
+
+Copy `server/.env.example` to `server/.env`:
+
+```bash
+cp server/.env.example server/.env
+```
+
+For local dev you can leave `MONGO_URI` blank — the server will spin up an in-memory MongoDB. Set a strong `JWT_SECRET`.
+
+### 4. Run the dev servers
+
+```bash
+npm run dev
+```
+
+This runs both the API (port 5000) and the Vite dev server (port 5173) concurrently. Open `http://localhost:5173`.
+
+On first run, the server seeds two demo users and a sample project (see [Demo accounts](#demo-accounts)).
+
+---
+
+## Demo accounts
+
+When the database is empty, the server auto-seeds these accounts:
+
+| Role   | Email             | Password   |
+| ------ | ----------------- | ---------- |
+| Admin  | `admin@demo.com`  | `demo1234` |
+| Member | `member@demo.com` | `demo1234` |
+
+Both have access to a pre-populated project named **"Marketing Launch Q1"** with sample tasks and labels.
+
+To disable seeding, set `SEED_DEMO=false` in your environment.
+
+---
+
+## Deploying to Railway
+
+This project is set up as a **single Railway service** that builds the React client and serves it from the Express server.
+
+### 1. Create a MongoDB Atlas cluster
+
+1. Sign up at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas) and create a free **M0** cluster.
+2. Under **Database Access**, create a user with read/write permissions.
+3. Under **Network Access**, click **Add IP Address → Allow Access from Anywhere** (`0.0.0.0/0`). Required for Railway.
+4. Click **Connect → Drivers**, copy the connection string. Replace `<password>` with your DB user's password and append a database name (e.g. `/team-task-manager`).
+
+### 2. Deploy on Railway
+
+1. Sign in to [railway.app](https://railway.app) and click **New Project → Deploy from GitHub repo**.
+2. Select this repository.
+3. Railway auto-detects Node.js. The included `nixpacks.toml` and root `package.json` handle the build — no extra config needed.
+4. In the **Variables** tab, add:
+   - `MONGO_URI` — your Atlas connection string
+   - `JWT_SECRET` — any long random string
+   - `JWT_EXPIRE` — `7d`
+   - `NODE_ENV` — `production`
+   - `SEED_DEMO` — `true` (or `false` if you don't want demo data)
+5. Under **Settings → Networking**, click **Generate Domain**.
+6. Wait for the deploy to finish, then open the generated URL.
+
+### Build / start commands
+
+Railway runs these automatically via `nixpacks.toml`:
+
+- Install: `npm install && npm --prefix server install && npm --prefix client install`
+- Build:   `npm --prefix client run build`
+- Start:   `node server/server.js`
+
+In production the Express server serves the built React client at `/` and the API at `/api/*`.
+
+---
+
+## API reference
+
+All endpoints (except auth) require a `Authorization: Bearer <token>` header.
+
+### Auth
+
+| Method | Endpoint                | Description              |
+| ------ | ----------------------- | ------------------------ |
+| POST   | `/api/auth/register`    | Create an account        |
+| POST   | `/api/auth/login`       | Sign in, receive a token |
+| GET    | `/api/auth/me`          | Get the current user     |
+
+### Projects
+
+| Method | Endpoint                                         | Access  | Description                     |
+| ------ | ------------------------------------------------ | ------- | ------------------------------- |
+| GET    | `/api/projects`                                  | Member  | List my projects                |
+| POST   | `/api/projects`                                  | Auth    | Create a project                |
+| GET    | `/api/projects/:id`                              | Member  | Project detail                  |
+| PUT    | `/api/projects/:id`                              | Admin   | Update project                  |
+| DELETE | `/api/projects/:id`                              | Owner   | Delete project (cascade)        |
+| POST   | `/api/projects/:id/members`                      | Admin   | Add member by email             |
+| PATCH  | `/api/projects/:id/members/:userId`              | Admin   | Change role (admin / member)    |
+| DELETE | `/api/projects/:id/members/:userId`              | Admin   | Remove member                   |
+
+### Tasks
+
+| Method | Endpoint                                    | Access            | Description                        |
+| ------ | ------------------------------------------- | ----------------- | ---------------------------------- |
+| GET    | `/api/projects/:projectId/tasks`            | Project member    | List tasks (filters: status, priority, assignedTo, search) |
+| POST   | `/api/projects/:projectId/tasks`            | Project member    | Create a task                      |
+| GET    | `/api/tasks/me`                             | Auth              | All tasks assigned to me           |
+| GET    | `/api/tasks/:id`                            | Project member    | Task detail                        |
+| PUT    | `/api/tasks/:id`                            | Admin / creator / assignee | Update task               |
+| DELETE | `/api/tasks/:id`                            | Admin / creator   | Delete task                        |
+
+### Labels
+
+| Method | Endpoint                                       | Access | Description     |
+| ------ | ---------------------------------------------- | ------ | --------------- |
+| GET    | `/api/projects/:projectId/labels`              | Member | List labels     |
+| POST   | `/api/projects/:projectId/labels`              | Admin  | Create label    |
+| PUT    | `/api/projects/:projectId/labels/:labelId`     | Admin  | Update label    |
+| DELETE | `/api/projects/:projectId/labels/:labelId`     | Admin  | Delete label    |
+
+### Dashboard
+
+| Method | Endpoint         | Description                                 |
+| ------ | ---------------- | ------------------------------------------- |
+| GET    | `/api/dashboard` | Personal stats, upcoming tasks, recent projects |
+
+---
+
+## Project structure
 
 ```
-├── server/
-│   ├── config/          # Database connection
-│   ├── controllers/     # Route handlers (auth, tasks, categories)
-│   ├── middleware/       # JWT auth guard, global error handler
-│   ├── models/          # Mongoose schemas (User, Task, Category)
-│   ├── routes/          # Express route definitions
-│   └── server.js        # Entry point
-│
-├── client/
+.
+├── client/                  React + Vite frontend
 │   ├── src/
-│   │   ├── components/  # Layout, Sidebar, Navigation
-│   │   ├── context/     # AuthContext, TaskContext (state management)
-│   │   ├── pages/       # Login, Register, Dashboard, Tasks, Profile
-│   │   ├── services/    # Axios API client with interceptors
-│   │   └── App.jsx      # Root component with routing
-│   └── index.html
-│
-├── screenshots/         # App screenshots
+│   │   ├── components/      Layout, modals, shared UI
+│   │   ├── context/         AuthContext, ProjectsContext
+│   │   ├── lib/             Formatting helpers
+│   │   ├── pages/           Login, Register, Dashboard, Projects, ProjectDetail, MyTasks, Profile
+│   │   ├── services/        Axios client
+│   │   └── App.jsx
+│   ├── index.html
+│   └── vite.config.js
+├── server/                  Express API
+│   ├── config/db.js         Mongo connection (Atlas in prod, in-memory in dev)
+│   ├── controllers/         auth, project, task, category, dashboard
+│   ├── middleware/          JWT auth, project RBAC, error handler
+│   ├── models/              User, Project, Task, Category
+│   ├── routes/              auth, projects, tasks, dashboard
+│   ├── seed.js              Demo data seeder
+│   └── server.js            Entry point
+├── nixpacks.toml            Railway build config
+├── package.json             Monorepo scripts
 └── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## Role-based access summary
 
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) v18 or higher
-
-> **Note:** No MongoDB installation required — the app uses `mongodb-memory-server` which runs MongoDB in-memory automatically.
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/harsh-kumar-rai/Task-Manager.git
-cd personal-task-manager
-
-# Install backend dependencies
-cd server
-npm install
-
-# Install frontend dependencies
-cd ../client
-npm install
-```
-
-### Running the App
-
-Open two terminal windows:
-
-```bash
-# Terminal 1 — Start backend (port 5000)
-cd server
-npm run dev
-
-# Terminal 2 — Start frontend (port 5173)
-cd client
-npm run dev
-```
-
-Open **http://localhost:5173** in your browser, register an account, and start managing your tasks.
+| Action                      | Admin | Member | Notes                                          |
+| --------------------------- | ----- | ------ | ---------------------------------------------- |
+| Create a project            | Yes   | Yes    | Creator becomes admin automatically            |
+| Edit project name / desc    | Yes   | No     |                                                |
+| Delete project              | Owner | No     | Only the original creator can delete           |
+| Invite / remove members     | Yes   | No     |                                                |
+| Change member roles         | Yes   | No     | Owner must remain admin                        |
+| Create / delete labels      | Yes   | No     |                                                |
+| Create tasks                | Yes   | Yes    |                                                |
+| Edit any task               | Yes   | No     |                                                |
+| Edit own / assigned task    | Yes   | Yes    | Members can edit tasks they created or own     |
+| Delete a task               | Yes   | Creator only |                                          |
 
 ---
 
-## 📡 API Reference
+## License
 
-### Authentication
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/register` | Register a new user |
-| `POST` | `/api/auth/login` | Authenticate and receive JWT |
-| `GET` | `/api/auth/me` | Get current user profile |
-
-### Tasks (requires authentication)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/tasks` | List tasks with filters, search, and pagination |
-| `POST` | `/api/tasks` | Create a new task |
-| `GET` | `/api/tasks/:id` | Get a single task by ID |
-| `PUT` | `/api/tasks/:id` | Update a task |
-| `DELETE` | `/api/tasks/:id` | Delete a task |
-| `GET` | `/api/tasks/stats` | Get aggregated task statistics |
-
-### Categories (requires authentication)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/categories` | List all user categories |
-| `POST` | `/api/categories` | Create a category |
-| `PUT` | `/api/categories/:id` | Update a category |
-| `DELETE` | `/api/categories/:id` | Delete a category |
-
-#### Query Parameters for `GET /api/tasks`
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `status` | string | Filter by `todo`, `in-progress`, or `completed` |
-| `priority` | string | Filter by `low`, `medium`, `high`, or `urgent` |
-| `category` | string | Filter by category ID |
-| `search` | string | Search in title and description |
-| `sortBy` | string | Field to sort by (default: `createdAt`) |
-| `order` | string | `asc` or `desc` (default: `desc`) |
-| `page` | number | Page number for pagination |
-| `limit` | number | Results per page (default: `20`) |
-
----
-
-## 🗂 Environment Variables
-
-Create a `.env` file in the `server/` directory:
-
-```env
-PORT=5000
-JWT_SECRET=your_secret_key_here
-JWT_EXPIRE=7d
-NODE_ENV=development
-```
-
----
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
+MIT
