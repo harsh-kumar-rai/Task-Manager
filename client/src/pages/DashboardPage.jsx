@@ -1,137 +1,163 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { HiOutlineArrowRight, HiOutlineCalendar } from 'react-icons/hi';
+import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { useTasks } from '../context/TaskContext';
-import { HiOutlineClipboardList, HiOutlineClock, HiOutlineCheckCircle, HiOutlineExclamation } from 'react-icons/hi';
+import { greeting, todayLong, formatDate, isOverdue, statusLabel, avatarColorClass } from '../lib/format';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { stats, tasks, fetchStats, fetchTasks } = useTasks();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStats();
-    fetchTasks({ limit: 5, sortBy: 'createdAt', order: 'desc' });
-  }, [fetchStats, fetchTasks]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: res } = await api.get('/dashboard');
+        if (!cancelled) setData(res.dashboard);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  const completionRate = stats && stats.total > 0
-    ? Math.round((stats.completed / stats.total) * 100)
-    : 0;
+  if (loading) {
+    return (
+      <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
 
-  const circumference = 2 * Math.PI * 50;
-  const dashOffset = circumference - (completionRate / 100) * circumference;
-
-  const greetingHour = new Date().getHours();
-  let greeting = 'Good morning';
-  if (greetingHour >= 12 && greetingHour < 17) greeting = 'Good afternoon';
-  else if (greetingHour >= 17) greeting = 'Good evening';
-
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const formatDate = (d) => {
-    if (!d) return '';
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
+  const stats = data?.stats || { totalAssigned: 0, todo: 0, inProgress: 0, completed: 0, overdue: 0, totalProjects: 0 };
+  const upcoming = data?.upcomingTasks || [];
+  const projects = data?.recentProjects || [];
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="fade-in">
+      <header className="page-head">
         <div>
-          <h1>{greeting}, {user?.name?.split(' ')[0]}</h1>
-          <p className="date-text">{today}</p>
+          <p className="eyebrow">{todayLong()}</p>
+          <h1>{greeting()}, <em>{user?.name?.split(' ')[0]}</em></h1>
+          <p className="page-meta">Here&apos;s what&apos;s on your plate across {stats.totalProjects} {stats.totalProjects === 1 ? 'project' : 'projects'}.</p>
+        </div>
+      </header>
+
+      <div className="stat-grid">
+        <div className="stat-card">
+          <span className="stat-label">Assigned to me</span>
+          <span className="stat-value">{stats.totalAssigned}</span>
+          <span className="stat-trend">{stats.todo} to do · {stats.inProgress} in progress</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Overdue</span>
+          <span className="stat-value" style={{ color: stats.overdue > 0 ? 'var(--danger)' : 'inherit' }}>
+            {stats.overdue}
+          </span>
+          <span className="stat-trend">Past due date and not completed</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Completed</span>
+          <span className="stat-value">{stats.completed}</span>
+          <span className="stat-trend">All time</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Projects</span>
+          <span className="stat-value">{stats.totalProjects}</span>
+          <span className="stat-trend">Active workspaces</span>
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue"><HiOutlineClipboardList /></div>
-          <div className="stat-value">{stats?.total || 0}</div>
-          <div className="stat-label">Total Tasks</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon amber"><HiOutlineClock /></div>
-          <div className="stat-value">{stats?.inProgress || 0}</div>
-          <div className="stat-label">In Progress</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green"><HiOutlineCheckCircle /></div>
-          <div className="stat-value">{stats?.completed || 0}</div>
-          <div className="stat-label">Completed</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red"><HiOutlineExclamation /></div>
-          <div className="stat-value">{stats?.overdue || 0}</div>
-          <div className="stat-label">Overdue</div>
-        </div>
-      </div>
-
-      {stats && stats.total > 0 && (
-        <div className="progress-ring-container">
-          <div className="progress-ring">
-            <svg width="120" height="120" viewBox="0 0 120 120">
-              <circle className="ring-bg" cx="60" cy="60" r="50" />
-              <circle
-                className="ring-fill"
-                cx="60" cy="60" r="50"
-                strokeDasharray={circumference}
-                strokeDashoffset={dashOffset}
-              />
-            </svg>
-            <div className="progress-center">
-              <span className="pct">{completionRate}%</span>
-              <span className="pct-label">Done</span>
-            </div>
+      <div className="two-col">
+        <section className="section">
+          <div className="section-head">
+            <h2>Upcoming for you</h2>
+            <Link to="/my-tasks" className="section-link">
+              View all <HiOutlineArrowRight style={{ display: 'inline', verticalAlign: -2 }} />
+            </Link>
           </div>
-          <div className="progress-legend">
-            <div className="legend-item">
-              <span className="legend-dot" style={{ background: 'var(--sky)' }} />
-              <span>To Do</span>
-              <span className="legend-count">{stats.todo}</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot" style={{ background: 'var(--amber)' }} />
-              <span>In Progress</span>
-              <span className="legend-count">{stats.inProgress}</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot" style={{ background: 'var(--emerald)' }} />
-              <span>Completed</span>
-              <span className="legend-count">{stats.completed}</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot" style={{ background: 'var(--rose)' }} />
-              <span>Overdue</span>
-              <span className="legend-count">{stats.overdue}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="recent-tasks">
-        <h3 className="section-title">Recent Tasks</h3>
-        {tasks.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
-            <h3>No tasks yet</h3>
-            <p>Head over to the Tasks page to create your first task</p>
-          </div>
-        ) : (
-          tasks.slice(0, 5).map((task) => (
-            <div className="task-item" key={task._id}>
-              <div>
-                <div className="task-item-title">{task.title}</div>
-                <span className={`badge badge-${task.priority}`}>{task.priority}</span>
+          <div className="card">
+            {upcoming.length === 0 ? (
+              <div className="empty" style={{ padding: '40px 20px' }}>
+                <p className="empty-title">Nothing on your plate</p>
+                <p className="empty-desc">You&apos;re all caught up. Tasks assigned to you will appear here.</p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className={`badge badge-${task.status}`}>{task.status.replace('-', ' ')}</span>
-                {task.dueDate && <span className="task-due">{formatDate(task.dueDate)}</span>}
+            ) : (
+              <div className="row-list">
+                {upcoming.map((task) => {
+                  const overdue = isOverdue(task.dueDate, task.status);
+                  return (
+                    <Link
+                      key={task._id}
+                      to={`/projects/${task.project._id}`}
+                      className="row"
+                      style={{ color: 'inherit' }}
+                    >
+                      <div className="row-main">
+                        <div className="row-title">{task.title}</div>
+                        <div className="row-sub">
+                          {task.project.name}
+                        </div>
+                      </div>
+                      {task.dueDate && (
+                        <span
+                          className="row-sub flex items-center gap-2"
+                          style={{ color: overdue ? 'var(--danger)' : 'var(--text-muted)' }}
+                        >
+                          <HiOutlineCalendar size={13} />
+                          {formatDate(task.dueDate)}
+                        </span>
+                      )}
+                      <span className={`badge badge-${task.status}`}>
+                        <span className="dot" />
+                        {statusLabel(task.status)}
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
-            </div>
-          ))
-        )}
+            )}
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <h2>Recent projects</h2>
+            <Link to="/projects" className="section-link">
+              All projects <HiOutlineArrowRight style={{ display: 'inline', verticalAlign: -2 }} />
+            </Link>
+          </div>
+          <div className="card">
+            {projects.length === 0 ? (
+              <div className="empty" style={{ padding: '40px 20px' }}>
+                <p className="empty-title">No projects yet</p>
+                <p className="empty-desc">Create your first project to start organizing work.</p>
+              </div>
+            ) : (
+              <div className="row-list">
+                {projects.map((p) => (
+                  <Link key={p._id} to={`/projects/${p._id}`} className="row" style={{ color: 'inherit' }}>
+                    <span
+                      className={`avatar avatar-sm ${avatarColorClass(p._id)}`}
+                      style={{ fontFamily: 'var(--font-serif)' }}
+                    >
+                      {p.name[0]?.toUpperCase()}
+                    </span>
+                    <div className="row-main">
+                      <div className="row-title">{p.name}</div>
+                      <div className="row-sub">{p.members.length} {p.members.length === 1 ? 'member' : 'members'}</div>
+                    </div>
+                    <HiOutlineArrowRight color="var(--text-muted)" size={14} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

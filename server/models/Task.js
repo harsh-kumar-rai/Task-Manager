@@ -28,30 +28,35 @@ const taskSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    category: {
+    project: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Category',
-      default: null,
+      ref: 'Project',
+      required: true,
+      index: true,
     },
-    tags: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
-    user: {
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+    createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
+    labels: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Category',
+      },
+    ],
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-taskSchema.index({ user: 1, status: 1 });
-taskSchema.index({ user: 1, priority: 1 });
-taskSchema.index({ user: 1, dueDate: 1 });
+taskSchema.index({ project: 1, status: 1 });
+taskSchema.index({ assignedTo: 1, status: 1 });
+taskSchema.index({ project: 1, dueDate: 1 });
 
 module.exports = mongoose.model('Task', taskSchema);

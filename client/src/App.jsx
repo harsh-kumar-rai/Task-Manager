@@ -5,7 +5,9 @@ import Layout from './components/Layout/Layout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
-import TasksPage from './pages/TasksPage';
+import ProjectsPage from './pages/ProjectsPage';
+import ProjectDetailPage from './pages/ProjectDetailPage';
+import MyTasksPage from './pages/MyTasksPage';
 import ProfilePage from './pages/ProfilePage';
 
 function ProtectedRoute({ children }) {
@@ -24,15 +26,16 @@ export default function App() {
   return (
     <>
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
-          duration: 3000,
+          duration: 2800,
           style: {
-            background: '#1e293b',
-            color: '#f1f5f9',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '12px',
-            fontSize: '14px',
+            background: '#1C1917',
+            color: '#FAFAF9',
+            borderRadius: '8px',
+            fontSize: '13.5px',
+            padding: '10px 14px',
+            border: '1px solid rgba(250,250,249,0.08)',
           },
         }}
       />
@@ -41,7 +44,9 @@ export default function App() {
         <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<DashboardPage />} />
-          <Route path="tasks" element={<TasksPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="my-tasks" element={<MyTasksPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
